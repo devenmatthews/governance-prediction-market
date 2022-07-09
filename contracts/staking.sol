@@ -2,6 +2,10 @@
 
 pragma solidity ^0.8.0;
 
+import "./mocks/GovTokenMock.sol";
+import "./mocks/GovernorMock.sol";
+import "hardhat/console.sol";
+
 // title
 
 contract Staking {
@@ -24,6 +28,8 @@ contract Staking {
     uint public currentPositionId; // will increment after each new position is created
     address public govTokenAddress;
     address public govContractAddress;
+    GovTokenMock public govToken;
+    GovernorMock public governor;
     uint public proposalId;
     bool public marketSettled;
     uint public totalYes;
@@ -36,6 +42,8 @@ contract Staking {
     constructor(address _govTokenAddress, address _govContractAddress, uint _proposalId) payable {
         govTokenAddress = _govTokenAddress;
         govContractAddress = _govContractAddress;
+        govToken = GovTokenMock(_govTokenAddress);
+        governor = GovernorMock(payable(_govContractAddress));
         proposalId = _proposalId;
         owner = msg.sender;
         currentPositionId = 0;
@@ -49,8 +57,9 @@ contract Staking {
     function stakeVote(uint amount, uint8 support) external payable {
         require(support == 1 || support == 0, "require voting be binary");
         //require(govContractAddress.balanceOf(msg.sender) >= amount, "stake amount must be less than user token balance");
-        require(govTokenAddress.allowance(msg.sender, address(this)) >= amount, "stake amount must be less than approved transfer amount");
-        require(govContractAddress.state(proposalId) == 1, "proposal is no longer accepting votes");
+        require(govToken.allowance(msg.sender, address(this)) >= amount, "stake amount must be less than approved transfer amount");
+        console.log("proposal state: %s", uint(governor.state(proposalId)));
+        require(uint256(governor.state(proposalId)) == 1 || uint(governor.state(proposalId)) == 0, "proposal is no longer accepting votes");
         // create new position
         positions[currentPositionId] = Position(
             currentPositionId,
@@ -70,19 +79,19 @@ contract Staking {
             totalYes += amount;
         }
         //make transfer
-        govTokenAddress.transferFrom(msg.sender, address(this), amount);
+        govToken.transferFrom(msg.sender, address(this), amount);
         // self-delegate and vote
-        govTokenAddress.delegate(address(this));
-        govContractAddress.castVote(proposalId, support);
+        govToken.delegate(address(this));
+        governor.castVote(proposalId, support);
     }
     
 
     // pure because it doesn't touch the blockchain
-    function calculatePayout(uint positionId, uint8 winningSupport, uint totalWinning, uint totalLosing) private pure returns(uint) {
-        if (positions[positionId].support != winningSupport) {
+    function calculatePayout(uint positionAmount, uint positionSupport, uint8 winningSupport, uint totalWinning, uint totalLosing) private pure returns(uint) {
+        if (positionSupport != winningSupport) {
             return 0;
         }
-        return positions[positionId].amount + (positions[positionId].amount / totalWinning * totalLosing); // userPosition's fraction of the winning side, multiplied by the total payout from the losing side to calculate user position payout
+        return positionAmount + (positionAmount / totalWinning * totalLosing); // userPosition's fraction of the winning side, multiplied by the total payout from the losing side to calculate user position payout
     }
 
     function getPositionById(uint positionId) external view returns(Position memory) {
@@ -100,25 +109,25 @@ contract Staking {
         require(positions[positionId].open == true, "Position is closed");
 
         positions[positionId].open = false;
-        uint proposalState = govContractAddress.state(proposalId);
+        uint proposalState = uint(governor.state(proposalId));
         if (proposalState == 2) { // cancelled, return funds
-            govTokenAddress.transferFrom(address(this), msg.sender, positions[positionId].amount);
+            govToken.transferFrom(address(this), msg.sender, positions[positionId].amount);
             return;
         }
         if (proposalState == 4) { // failed, no voters win
-            uint userPayout = calculatePayout(positions[positionId], 0, totalNo, totalYes);
-            govTokenAddress.transferFrom(address(this), msg.sender, userPayout);
+            uint userPayout = calculatePayout(positions[positionId].amount, positions[positionId].support, 0, totalNo, totalYes);
+            govToken.transferFrom(address(this), msg.sender, userPayout);
         }
         if (proposalState == 7) { // executed, yes voters win
-            uint userPayout = calculatePayout(positions[positionId], 1, totalYes, totalNo);
-            govTokenAddress.transferFrom(address(this), msg.sender, userPayout);
+            uint userPayout = calculatePayout(positions[positionId].amount, positions[positionId].support, 1, totalYes, totalNo);
+            govToken.transferFrom(address(this), msg.sender, userPayout);
         }
     }
 
     // settle market
     function settleMarket() external {
         require(marketSettled == false);
-        uint proposalState = govContractAddress.state(proposalId);
+        uint proposalState = uint(governor.state(proposalId));
         require(proposalState == 2 || proposalState == 4 || proposalState == 7);
         marketSettled = true;
     }

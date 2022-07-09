@@ -18,7 +18,7 @@ contract GovernorMock is Governor, GovernorCountingSimple, GovernorVotes, Govern
     }
 
     function votingPeriod() public pure override returns (uint256) {
-        return 2; // 1 week
+        return 15; // 1 week
     }
 
     // The following functions are overrides required by Solidity.
