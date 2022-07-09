@@ -13,84 +13,76 @@ contract Staking {
     struct Position {
         uint positionId;
         address walletAddress; // address that created the position
-        uint createdDate;
-        uint unlockDate; //date at which funds can be withdrawn withou incurring in penalty
-        uint percentInterest;
-        uint plegWeiStaked;
-        uint plegInterest;// amount of intereste the user will earn when their position is unlocked
+        uint amount; // amount of governance tokens being staked
+        uint support;
         bool open;// position is closed or not
+
     }
 
-    Position position; // creates a position; some pleg that the user has stacked
+    Position position; // creates a position
 
-    uint public currentPositionId; //will increment after each new position is created
+    uint public currentPositionId; // will increment after each new position is created
+    address public govTokenAddress;
+    address public govContractAddress;
+    uint public proposalId;
+    bool public marketSettled;
+    uint public totalYes;
+    uint public totalNo;
     mapping(uint => Position) public positions;
-    mapping(address => uint[]) public positionIdsByAddress; // ability for a user to query all the positin they created
-    mapping(uint => uint) public tiers; //data on number of days and interest rate that they can stake their $PLEG at
-    uint[] public lockPeriods;
+    mapping(address => uint[]) public positionIdsByAddress; // ability for a user to query all the positions they created
 
 
-    //able to send $PLEG to the contract, so that it can pay the interest
-    constructor() payable {
+    // constructor initializes with a new market
+    constructor(address _govTokenAddress, address _govContractAddress, uint _proposalId) payable {
+        govTokenAddress = _govTokenAddress;
+        govContractAddress = _govContractAddress;
+        proposalId = _proposalId;
         owner = msg.sender;
         currentPositionId = 0;
-
-        tiers[30] = 700; // 700 bp apy in 30 days
-        tiers[90] = 1000; 
-        tiers[180] = 1200;
-
-        lockPeriods.push(30);
-        lockPeriods.push(90);
-        lockPeriods.push(180);
-
+        marketSettled = false;
+        totalNo = 0;
+        totalYes = 0;
     }
 
 
 
-    function stakePleg(uint numDays) external payable {
-        require(tiers[numDays] > 0 , "Mapping not found"); //we don't want people to send $PLEG with an arbitrary number of days without it being pre-approved
-
-        positions[currentPositionId] = Position( //TODO understand 
+    function stakeVote(uint amount, uint8 support) external payable {
+        require(support == 1 || support == 0, "require voting be binary");
+        //require(govContractAddress.balanceOf(msg.sender) >= amount, "stake amount must be less than user token balance");
+        require(govTokenAddress.allowance(msg.sender, address(this)) >= amount, "stake amount must be less than approved transfer amount");
+        require(govContractAddress.state(proposalId) == 1, "proposal is no longer accepting votes");
+        // create new position
+        positions[currentPositionId] = Position(
             currentPositionId,
             msg.sender,
-            block.timestamp, //created date
-            block.timestamp + (numDays * 1 days), //unlock days. must multiply by "1 days otherwise Soldity doesn't understand the object
-            tiers[numDays],
-            msg.value, //the pleg stakes - amount of pleg
-            calculateInterest(tiers[numDays], numDays, msg.value),
+            amount,
+            support,
             true
         );
-
+        // store position and increment
         positionIdsByAddress[msg.sender].push(currentPositionId); 
         currentPositionId++;
-
+        //increment total yes or no
+        if (support == 0) {
+            totalNo += amount;
+        }
+        if (support == 1) {
+            totalYes += amount;
+        }
+        //make transfer
+        govTokenAddress.transferFrom(msg.sender, address(this), amount);
+        // self-delegate and vote
+        govTokenAddress.delegate(address(this));
+        govContractAddress.castVote(proposalId, support);
     }
     
 
     // pure because it doesn't touch the blockchain
-    function calculateInterest(uint basisPoints, uint numDays, uint plegWeiAmount) private pure returns(uint) {
-        return basisPoints * plegWeiAmount / 10000; // if you divide first by 1000 it will create problem as it becomes decimal number, not supported
-    }
-
-
-
-    //change lock periods by owner
-
-    function modifyLockPeriods(uint numDays, uint basisPoints) external {
-        require(owner == msg.sender , "Only owner may modify staking periods");
-        // add require statement if you don't want to override existing tiers
-        tiers[numDays] = basisPoints;
-
-        lockPeriods.push(numDays); // so its possible to query all the staking lengths at one time
-    }
-
-
-    function getLockPeriod() external view returns(uint[] memory) {
-        return lockPeriods;
-    }
-
-    function getInterestRate(uint numDays) external view returns(uint) {
-        return tiers[numDays];
+    function calculatePayout(uint positionId, uint8 winningSupport, uint totalWinning, uint totalLosing) private pure returns(uint) {
+        if (positions[positionId].support != winningSupport) {
+            return 0;
+        }
+        return positions[positionId].amount + (positions[positionId].amount / totalWinning * totalLosing); // userPosition's fraction of the winning side, multiplied by the total payout from the losing side to calculate user position payout
     }
 
     function getPositionById(uint positionId) external view returns(Position memory) {
@@ -101,32 +93,33 @@ contract Staking {
         return positionIdsByAddress[walletAddress];
     }
 
-    function changeUnlockDate(uint positionId, uint newUnlockDate) external {
-        require(owner == msg.sender , "Only owner may modify unlock dates");
-
-        positions[positionId].unlockDate = newUnlockDate;
-
-    }
-
-    //unstake, like withdraw function
+    // close position and withdraw staked funds
     function closePosition(uint positionId) external {
+        require(marketSettled, "market has not been settled yet");
         require(positions[positionId].walletAddress == msg.sender, "Only position creator may modify position");
         require(positions[positionId].open == true, "Position is closed");
 
         positions[positionId].open = false;
-
-        //penalty if withdraw early
-        if(block.timestamp > positions[positionId].unlockDate) {
-            uint amount = positions[positionId].plegWeiStaked + positions[positionId].plegInterest;
-            payable(msg.sender).call{value: amount}("");
-        } else {
-            payable(msg.sender).call{value: positions[positionId].plegWeiStaked}("");
+        uint proposalState = govContractAddress.state(proposalId);
+        if (proposalState == 2) { // cancelled, return funds
+            govTokenAddress.transferFrom(address(this), msg.sender, positions[positionId].amount);
+            return;
         }
-
+        if (proposalState == 4) { // failed, no voters win
+            uint userPayout = calculatePayout(positions[positionId], 0, totalNo, totalYes);
+            govTokenAddress.transferFrom(address(this), msg.sender, userPayout);
+        }
+        if (proposalState == 7) { // executed, yes voters win
+            uint userPayout = calculatePayout(positions[positionId], 1, totalYes, totalNo);
+            govTokenAddress.transferFrom(address(this), msg.sender, userPayout);
+        }
     }
 
-
-
-
-
+    // settle market
+    function settleMarket() external {
+        require(marketSettled == false);
+        uint proposalState = govContractAddress.state(proposalId);
+        require(proposalState == 2 || proposalState == 4 || proposalState == 7);
+        marketSettled = true;
+    }
 }
