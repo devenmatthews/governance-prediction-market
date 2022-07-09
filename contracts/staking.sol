@@ -59,7 +59,7 @@ contract Staking {
         //require(govContractAddress.balanceOf(msg.sender) >= amount, "stake amount must be less than user token balance");
         require(govToken.allowance(msg.sender, address(this)) >= amount, "stake amount must be less than approved transfer amount");
         console.log("proposal state: %s", uint(governor.state(proposalId)));
-        require(uint256(governor.state(proposalId)) == 1 || uint(governor.state(proposalId)) == 0, "proposal is no longer accepting votes");
+        require(uint256(governor.state(proposalId)) == 1, "proposal is no longer accepting votes");
         // create new position
         positions[currentPositionId] = Position(
             currentPositionId,
@@ -71,15 +71,16 @@ contract Staking {
         // store position and increment
         positionIdsByAddress[msg.sender].push(currentPositionId); 
         currentPositionId++;
-        //increment total yes or no
+        ////make transfer to no
         if (support == 0) {
             totalNo += amount;
+            govToken.transferFrom(msg.sender, _noPool, amount);
         }
+        //make transfer to yes
         if (support == 1) {
             totalYes += amount;
+            govToken.transferFrom(msg.sender, _yesPool, amount);
         }
-        //make transfer
-        govToken.transferFrom(msg.sender, address(this), amount);
         // self-delegate and vote
         govToken.delegate(address(this));
         governor.castVote(proposalId, support);
