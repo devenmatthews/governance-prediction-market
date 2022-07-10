@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 
 import "./mocks/GovTokenMock.sol";
 import "./mocks/GovernorMock.sol";
+import "./VotePool.sol";
 import "hardhat/console.sol";
 
 // title
@@ -28,6 +29,8 @@ contract Staking {
     uint public currentPositionId; // will increment after each new position is created
     address public govTokenAddress;
     address public govContractAddress;
+    VotePool public _yesPool;
+    VotePool public _noPool;
     GovTokenMock public govToken;
     GovernorMock public governor;
     uint public proposalId;
@@ -50,6 +53,8 @@ contract Staking {
         marketSettled = false;
         totalNo = 0;
         totalYes = 0;
+        _noPool = new VotePool(address(governor), address(govToken), 0, proposalId);
+        _yesPool = new VotePool(address(governor), address(govToken), 1, proposalId);
     }
 
 
@@ -74,16 +79,13 @@ contract Staking {
         ////make transfer to no
         if (support == 0) {
             totalNo += amount;
-            govToken.transferFrom(msg.sender, _noPool, amount);
+            govToken.transferFrom(msg.sender, address(_noPool), amount);
         }
         //make transfer to yes
         if (support == 1) {
             totalYes += amount;
-            govToken.transferFrom(msg.sender, _yesPool, amount);
+            govToken.transferFrom(msg.sender, address(_yesPool), amount);
         }
-        // self-delegate and vote
-        govToken.delegate(address(this));
-        governor.castVote(proposalId, support);
     }
     
 
@@ -92,7 +94,7 @@ contract Staking {
         if (positionSupport != winningSupport) {
             return 0;
         }
-        return positionAmount + (positionAmount / totalWinning * totalLosing); // userPosition's fraction of the winning side, multiplied by the total payout from the losing side to calculate user position payout
+        return (positionAmount / totalWinning * totalLosing); // userPosition's fraction of the winning side, multiplied by the total payout from the losing side to calculate user position payout
     }
 
     function getPositionById(uint positionId) external view returns(Position memory) {
@@ -112,16 +114,25 @@ contract Staking {
         positions[positionId].open = false;
         uint proposalState = uint(governor.state(proposalId));
         if (proposalState == 2) { // cancelled, return funds
-            govToken.transferFrom(address(this), msg.sender, positions[positionId].amount);
+            if (positions[positionId].support == 0){
+                govToken.transferFrom(address(_noPool), msg.sender, positions[positionId].amount);
+                return;
+            }
+            govToken.transferFrom(address(_yesPool), msg.sender, positions[positionId].amount);
             return;
+            
         }
-        if (proposalState == 4) { // failed, no voters win
+        if (proposalState == 3) { // failed, no voters win
+            console.log("no wins");
             uint userPayout = calculatePayout(positions[positionId].amount, positions[positionId].support, 0, totalNo, totalYes);
-            govToken.transferFrom(address(this), msg.sender, userPayout);
+            console.log(userPayout);
+            _yesPool.transfer(msg.sender, userPayout);
+            _noPool.transfer(msg.sender, positions[positionId].amount);
         }
         if (proposalState == 7) { // executed, yes voters win
             uint userPayout = calculatePayout(positions[positionId].amount, positions[positionId].support, 1, totalYes, totalNo);
-            govToken.transferFrom(address(this), msg.sender, userPayout);
+            govToken.transferFrom(address(_noPool), msg.sender, userPayout);
+            govToken.transferFrom(address(_yesPool), msg.sender, positions[positionId].amount);
         }
     }
 
@@ -129,7 +140,16 @@ contract Staking {
     function settleMarket() external {
         require(marketSettled == false);
         uint proposalState = uint(governor.state(proposalId));
-        require(proposalState == 2 || proposalState == 4 || proposalState == 7);
+        require(proposalState == 1);
+        _yesPool.vote();
+        _noPool.vote();
         marketSettled = true;
+    }
+
+    function getYesPool() external view returns(address) {
+        return address(_yesPool);
+    }
+    function getNoPool() external view returns(address) {
+        return address(_noPool);
     }
 }

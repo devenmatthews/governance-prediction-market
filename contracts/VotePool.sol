@@ -23,16 +23,20 @@ contract VotePool {
         _;
     }
 
-    constructor(address governor, uint8 support, uint proposalId) {
+    constructor(address governor, address govToken, uint8 support, uint proposalId) {
         _owner = msg.sender;
         _support = support;
         _proposalId = proposalId;
         Governor = GovernorMock(payable(governor));
-        //GovToken = GovTokenMock(govToken);
+        GovToken = GovTokenMock(govToken);
     }
 
     function vote() govBetsOnly public {
+        GovToken.delegate(address(this));
         Governor.castVote(_proposalId, _support);
     }
 
+    function transfer(address recipient, uint value) govBetsOnly public {
+        GovToken.transfer(recipient, value);
+    }
 }

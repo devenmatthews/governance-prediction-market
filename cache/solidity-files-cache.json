@@ -1272,8 +1272,8 @@
       ]
     },
     "/Users/devenmatthews/dev/Hackathon/governance-prediction-market/contracts/staking.sol": {
-      "lastModificationDate": 1657386677782,
-      "contentHash": "ad793b88b10b9fd3ba61acf9c337c667",
+      "lastModificationDate": 1657455729222,
+      "contentHash": "3e1e2bf5a72c2f4affb6037344271529",
       "sourceName": "contracts/staking.sol",
       "solcConfig": {
         "version": "0.8.4",
@@ -1301,6 +1301,7 @@
       "imports": [
         "./mocks/GovTokenMock.sol",
         "./mocks/GovernorMock.sol",
+        "./VotePool.sol",
         "hardhat/console.sol"
       ],
       "versionPragmas": [
@@ -1381,6 +1382,107 @@
       "artifacts": [
         "console"
       ]
+    },
+    "/Users/devenmatthews/dev/Hackathon/governance-prediction-market/contracts/VotePool.sol": {
+      "lastModificationDate": 1657455679239,
+      "contentHash": "1011e272a4e8e60bb1867ec3dc533745",
+      "sourceName": "contracts/VotePool.sol",
+      "solcConfig": {
+        "version": "0.8.4",
+        "settings": {
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./mocks/GovTokenMock.sol",
+        "./mocks/GovernorMock.sol",
+        "hardhat/console.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.0"
+      ],
+      "artifacts": [
+        "VotePool"
+      ]
+    },
+    "/Users/devenmatthews/dev/Hackathon/governance-prediction-market/contracts/noPool.sol": {
+      "lastModificationDate": 1657403889505,
+      "contentHash": "d41d8cd98f00b204e9800998ecf8427e",
+      "sourceName": "contracts/noPool.sol",
+      "solcConfig": {
+        "version": "0.8.4",
+        "settings": {
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [],
+      "artifacts": []
+    },
+    "/Users/devenmatthews/dev/Hackathon/governance-prediction-market/contracts/VoteController.sol": {
+      "lastModificationDate": 1657405928752,
+      "contentHash": "d41d8cd98f00b204e9800998ecf8427e",
+      "sourceName": "contracts/VoteController.sol",
+      "solcConfig": {
+        "version": "0.8.4",
+        "settings": {
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [],
+      "artifacts": []
     }
   }
 }
